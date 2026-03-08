@@ -1,0 +1,25 @@
+{
+  "name": "クラウドランナー",
+  "short_name": "CloudRunner",
+  "description": "兵士を率いて迫り来る敵を撃破するアクションゲーム。ゲートを射撃で獲得して兵士を増やし、中ボス・大ボスの弾幕をかいくぐれ！",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#06061a",
+  "theme_color": "#06061a",
+  "categories": ["games"],
+  "icons": [
+    {
+      "src": "icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
