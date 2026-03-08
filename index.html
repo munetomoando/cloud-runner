@@ -22,24 +22,27 @@
       position: relative;
       width: 100vw;
     }
+    #gameWrap {
+      position: relative;
+      width: 400px;
+      height: 700px;
+    }
     #pauseBtn {
-      position: fixed;
-      top: calc(env(safe-area-inset-top, 0px) + 14px);
-      right: calc(env(safe-area-inset-right, 0px) + 14px);
-      z-index: 9999;
-      background: rgba(0,0,0,0.72);
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: rgba(0,0,0,0.75);
       color: #fff;
       border: 1px solid rgba(255,255,255,0.35);
       border-radius: 10px;
-      padding: 8px 12px;
-      font-size: 20px;
+      padding: 6px 10px;
+      font-size: 18px;
       line-height: 1;
-      appearance: none;
-      -webkit-appearance: none;
       display: block;
       min-width: 44px;
       min-height: 44px;
-      pointer-events: auto;
+      cursor: pointer;
     }
     #pauseBtn:active {
       transform: scale(0.96);
@@ -51,8 +54,10 @@
   </style>
 </head>
 <body>
-<canvas id="game"></canvas>
-<button id="pauseBtn">⏸</button>
+<div id="gameWrap">
+  <canvas id="game"></canvas>
+  <button id="pauseBtn">⏸</button>
+</div>
 <script>
 // ============================================================
 // Canvas セットアップ
