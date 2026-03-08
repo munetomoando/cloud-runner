@@ -26,12 +26,13 @@
       position: relative;
       width: 400px;
       height: 700px;
+      overflow: hidden;
     }
     #pauseBtn {
       position: absolute;
-      top: 10px;
+      top: 60px;
       right: 10px;
-      z-index: 1000;
+      z-index: 10;
       background: rgba(0,0,0,0.75);
       color: #fff;
       border: 1px solid rgba(255,255,255,0.35);
@@ -50,6 +51,10 @@
     canvas {
       display: block;
       touch-action: none;
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 1;
     }
   </style>
 </head>
