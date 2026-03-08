@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <!-- PWA -->
   <meta name="theme-color" content="#06061a">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,62 +12,12 @@
   <title>クラウドランナー</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #0a0a14;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100dvh;
-      padding-top: env(safe-area-inset-top);
-      padding-bottom: env(safe-area-inset-bottom);
-      overflow: hidden;
-      position: relative;
-      width: 100vw;
-    }
-    #gameWrap {
-      position: relative;
-      width: min(100vw, calc(100dvh * 0.57));
-      height: min(100dvh, calc(100vw * 1.75));
-      overflow: hidden;
-      max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    }
-    #pauseBtn {
-      position: absolute;
-      top: 60px;
-      right: 10px;
-      z-index: 10;
-      background: rgba(0,0,0,0.75);
-      color: #fff;
-      border: 1px solid rgba(255,255,255,0.35);
-      border-radius: 10px;
-      padding: 6px 10px;
-      font-size: 18px;
-      line-height: 1;
-      display: block;
-      min-width: 44px;
-      min-height: 44px;
-      cursor: pointer;
-    }
-    #pauseBtn:active {
-      transform: scale(0.96);
-    }
-    canvas {
-      display: block;
-      touch-action: none;
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 1;
-    }
+    body { background: #0a0a14; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+    canvas { display: block; touch-action: none; }
   </style>
 </head>
 <body>
-<div id="gameWrap">
-  <canvas id="game"></canvas>
-  <button id="pauseBtn">⏸</button>
-</div>
+<canvas id="game"></canvas>
 <script>
 // ============================================================
 // Canvas セットアップ
@@ -97,8 +47,7 @@ function playSound(freq, type, vol, dur, freq2) {
     if (freq2) o.frequency.exponentialRampToValueAtTime(freq2, ac.currentTime + dur * 0.8);
     g.gain.setValueAtTime(vol || 0.08, ac.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
-    o.connect(g); 
-    g.connect(getMasterGain());
+    o.connect(g); g.connect(masterGain || ac.destination);
     o.start(); o.stop(ac.currentTime + dur + 0.01);
   } catch(e) {}
 }
@@ -127,14 +76,35 @@ function playBossPhase() {
 function playMenuBgm() { /* BGMに任せる */ }
 
 // ============================================================
-// 【振動】iPhone Vibration API
+// 【振動】iPhoneゲーム向けイベント型ハプティクス
 // ============================================================
-function vib(pattern) {
+// iPhoneゲーム向けイベント型ハプティクス
+function vib(type) {
   try {
-    const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    if (isiOS) return; // iOS Safari does not support vibration
-    if (!navigator.vibrate) return;
-    navigator.vibrate(pattern);
+    const cap = window.Capacitor?.Plugins?.Haptics;
+
+    // iPhone (Capacitor)
+    if (cap) {
+      const H = window.Capacitor.Plugins.Haptics;
+
+      if (type === 'hit')        H.impact({ style: 'LIGHT' });     // 軽ヒット
+      else if (type === 'kill')  H.impact({ style: 'MEDIUM' });    // 敵撃破
+      else if (type === 'boss')  H.impact({ style: 'HEAVY' });     // ボス演出
+      else if (type === 'damage')H.notification({ type: 'ERROR' }); // プレイヤーダメージ
+      else if (type === 'power') H.notification({ type: 'SUCCESS' }); // パワーアップ
+      else                       H.impact({ style: 'LIGHT' });
+
+      return;
+    }
+
+    // Android / Chrome フォールバック
+    if (navigator.vibrate) {
+      if (type === 'damage') navigator.vibrate([120,40,120]);
+      else if (type === 'boss') navigator.vibrate([80,40,80,40,200]);
+      else if (type === 'kill') navigator.vibrate([40,20,40]);
+      else navigator.vibrate(20);
+    }
+
   } catch(e) {}
 }
 
@@ -274,9 +244,9 @@ let powerUps = { rapidFire: 0, spread: 0 };
 // ============================================================
 // ゲームオブジェクト
 // ============================================================
-let enemies = [], gates = [], bullets = [], enemyBullets = [], particles = [], ftexts = [], blastHoles = [];
-const MAX_BULLETS      = 60;
-const BULLET_FIRE_CAP  = 12;
+let enemies = [], gates = [], bullets = [], enemyBullets = [], particles = [], ftexts = [];
+const MAX_BULLETS      = 80;
+const BULLET_FIRE_CAP  = 18;
 
 function addBullet(b) {
   if (bullets.length >= MAX_BULLETS) return;
@@ -286,7 +256,7 @@ function addBullet(b) {
 let shakeStr = 0, shakeDmpr = 0, bgOff = 0, bgOff2 = 0;
 let bTimer = 0;
 let gameOverPending = false, winPending = false;
-let paused = false;
+
 // ============================================================
 // レベルタイムライン
 // ============================================================
@@ -348,15 +318,15 @@ function spawnEnemy(x, hp) {
   const r = Math.min(16 + hp * 0.65, 32);
   enemies.push({
     x, y: -r-10, hp, maxHp:hp, type:'normal', radius:r,
-    vy: 1.1 + (level * 0.25) + Math.random()*0.2,
-    vx: (Math.random()-0.5) * (1.0 + level*0.15),   // AI横移動初速
+    vy: 1.1 + Math.random()*0.2,
+    vx: (Math.random()-0.5) * 1.0,   // AI横移動初速
     vxTimer: Math.floor(Math.random()*60),
     hitFlash: 0
   });
 }
 function spawnMidBoss(x, hp) {
   enemies.push({
-    x, y:-65, hp, maxHp:hp, type:'mid', radius:46, vy:0.55 + level*0.12,
+    x, y:-65, hp, maxHp:hp, type:'mid', radius:46, vy:0.55,
     hitFlash:0, wobble:0, phase:1, armAngle:0,
     shotTimer:0, patternIdx:0,
     strafeDir:1, strafeTimer:0
@@ -365,9 +335,9 @@ function spawnMidBoss(x, hp) {
 function spawnBoss(x, hp) {
   ftext(GW/2, GH/2, '⚠ BOSS WARNING ⚠', '#ef4444', 30);
   shake(18, 1);
-  vib([200,100,200,100,400]);
+  vib('boss');
   enemies.push({
-    x, y:-85, hp, maxHp:hp, type:'boss', radius:66, vy:0.28 + level*0.08,
+    x, y:-85, hp, maxHp:hp, type:'boss', radius:66, vy:0.28,
     hitFlash:0, wobble:0, phase:1, spinAngle:0,
     shotTimer:0, patternIdx:0, spiralAngle:0,
     strafeDir:1, strafeTimer:0
@@ -383,14 +353,7 @@ function spawnWeaponGate(x, weaponType) {
     done:false, hp:14, maxHp:14, hitFlash:0, type:'weapon' });
 }
 function spawnEnemyBullet(x, y, vx, vy, col) {
-
-  if (enemyBullets.length > 140) return;
-
-  enemyBullets.push({
-    x, y, vx, vy,
-    dead:false,
-    col: col||'#fb7185'
-  });
+  enemyBullets.push({ x, y, vx, vy, dead:false, col: col||'#fb7185' });
 }
 
 // ============================================================
@@ -417,7 +380,7 @@ function bossShoot(e) {
   const pat = patterns[e.patternIdx % patterns.length];
   e.patternIdx++;
 
-  const sp = (isBoss ? (p2 ? 3.8 : 2.9) : (p2 ? 2.6 : 2.1)) + level * 0.35;
+  const sp = isBoss ? (p2 ? 3.8 : 2.9) : (p2 ? 2.6 : 2.1);
   const dx = P.x - e.x, dy = P.y - e.y;
   const d  = Math.sqrt(dx*dx + dy*dy) || 1;
   const ax = dx/d, ay = dy/d;
@@ -514,7 +477,7 @@ class FText {
     ctx.fillStyle=this.col; ctx.fillText(this.t,this.x,this.y); ctx.globalAlpha=1;
   }
 }
-function ptcls(x,y,col,n) { for(let i=0;i<n&&particles.length<120;i++) particles.push(new Ptcl(x,y,col)); }
+function ptcls(x,y,col,n) { for(let i=0;i<n&&particles.length<350;i++) particles.push(new Ptcl(x,y,col)); }
 function ftext(x,y,t,col,sz) { ftexts.push(new FText(x,y,t,col,sz)); }
 function shake(s,sec) { shakeStr=s; shakeDmpr=s/(60*sec); }
 
@@ -527,8 +490,8 @@ function fireBullets() {
   const interval = powerUps.rapidFire > 0 ? Math.max(2, Math.ceil(baseInterval/2)) : baseInterval;
   if (bTimer < interval) return;
   bTimer = 0;
-  const num = Math.min(8, 1 + Math.floor(P.count / 18));
-  const spread = Math.min(120, 20 + P.count * 0.9);
+  const num    = Math.min(4, 1 + Math.floor(P.count/15));
+  const spread = Math.min(60, 10 + P.count*0.6);
   let fired = 0;
   const spawn = (x,y,vx,vy) => {
     if (bullets.length >= MAX_BULLETS) return;
@@ -536,29 +499,18 @@ function fireBullets() {
     bullets.push({ x, y, vx, vy, alive:true });
     fired++;
   };
-  const armyWidth = Math.min(220, 20 + Math.sqrt(P.count) * 14);
-
-if (powerUps.spread > 0) {
-  for (let i=0; i<num; i++) {
-
-    const baseX = P.x + (Math.random() - 0.5) * armyWidth;
-
-    spawn(baseX, P.y-30, 0, -10);
-    spawn(baseX, P.y-30, -3, -9);
-    spawn(baseX, P.y-30,  3, -9);
+  if (powerUps.spread > 0) {
+    for (let i=0; i<num; i++) {
+      spawn(P.x + (Math.random()-.5)*spread, P.y-30, 0, -10);
+      spawn(P.x, P.y-30, -3, -9);
+      spawn(P.x, P.y-30,  3, -9);
+    }
+  } else {
+    for (let i=0; i<num; i++) {
+      spawn(P.x + (Math.random()-.5)*spread*1.5, P.y-30,
+            (Math.random()-.5)*2, -10-Math.random()*2);
+    }
   }
-
-} else {
-
-  for (let i=0; i<num; i++) {
-
-    const baseX = P.x + (Math.random() - 0.5) * armyWidth;
-
-    spawn(baseX, P.y-30,
-          (Math.random()-.5)*2, -10-Math.random()*2);
-  }
-
-}
   if (fired > 0) playShoot();
 }
 
@@ -579,7 +531,7 @@ function applyGate(g) {
       ptcls(g.x, g.y, '#a78bfa', 25);
     }
     shake(4, .2);
-    vib(40);
+    vib('power');
     return;
   }
   const before = P.count;
@@ -594,14 +546,14 @@ function applyGate(g) {
   setTimeout(()=>{ P.scaleTarget=1; }, 200);
   shake(pos?3:5, .2);
   ptcls(g.x, g.y, pos?'#4ade80':'#f87171', 15);
-  vib(pos ? [30,20,30] : 60);
+  vib(pos ? 'power' : 'damage');
 }
 
 // ============================================================
 // 更新ループ
 // ============================================================
 function update() {
-  if (state!==S.PLAY || gameOverPending || winPending || paused) return;
+  if (state!==S.PLAY || gameOverPending || winPending) return;
   timer++;
   bgOff  = (bgOff  + 2.5) % 56;
   bgOff2 = (bgOff2 + 1.2) % 120;
@@ -653,14 +605,14 @@ function update() {
       const dx=b.x-e.x, dy=b.y-e.y;
       if (dx*dx+dy*dy < e.radius*e.radius) {
         b.alive=false; e.hp--; e.hitFlash=5;
-        playHit(); vib(12);
+        playHit();
         ftext(e.x+(Math.random()-.5)*18, e.y-e.radius-4, '-1', '#fde68a', 13);
 
         // フェーズ2移行
         if (e.phase===1 && e.hp<=e.maxHp*.5 && (e.type==='mid'||e.type==='boss')) {
           e.phase=2; e.vy*=1.5;
           shake(10,.5); ptcls(e.x,e.y,'#a855f7',30);
-          playBossPhase(); vib([100,50,100,50,200]);
+          playBossPhase(); vib('boss');
           ftext(e.x, e.y-e.radius-24, '⚡ PHASE 2!', '#f59e0b', 16);
           addScore(500, e.x, e.y - e.radius - 40);
         }
@@ -670,7 +622,7 @@ function update() {
           const big = e.type!=='normal';
           shake(big?15:4, big?.65:.2);
           ptcls(e.x, e.y, big?'#fbbf24':'#fb923c', big?55:18);
-          playKill(); vib(big ? [80,30,80] : [40,20,40]);
+          playKill(); vib(big ? 'boss' : 'kill');
           if (e.type==='normal') addScore(100 * e.maxHp, e.x, e.y);
           if (e.type==='mid')  { addScore(2000, e.x, e.y); ftext(e.x, e.y, 'MID-BOSS 撃破！', '#fbbf24', 20); }
           if (e.type==='boss') { addScore(10000, GW/2, GH/2-40); ftext(GW/2, GH/2-40, '👾 BOSS 撃破！！', '#fbbf24', 28); }
@@ -685,32 +637,12 @@ function update() {
   // 敵弾の移動・プレイヤーへの衝突
   enemyBullets.forEach(b => {
     b.x += b.vx; b.y += b.vy;
-    const dx = b.x - P.x, dy = b.y - P.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const blastRadius = 60;
-
-    if (dist < blastRadius) {
-
-      const power = 1 - (dist / blastRadius); // center = strongest
-      // Enemy bullet damage calculated per-soldier
-      const soldiersHit = Math.floor((10 + P.count * 0.04) * power);
-      const damage = Math.min(P.count, Math.max(1, soldiersHit));
-
-      P.count = Math.max(0, P.count - damage);
-      // Soldier knockback when explosion occurs
-      P.scaleTarget = 0.7;
-      setTimeout(() => { P.scaleTarget = 1; }, 180);
-
-      shake(12 * power, 0.35);
-      ptcls(b.x, b.y, '#ef4444', 35);
-
-      playDmg();
-      vib([120, 40, 120, 40, 180]);
-
-      ftext(b.x, b.y - 10, `-${damage}`, '#f87171', 16);
-
-      blastHoles.push({ x: b.x, y: b.y, r: 45, life: 180 });
-
+    const dx=b.x-P.x, dy=b.y-P.y;
+    if (dx*dx+dy*dy < 900) {
+      P.count = Math.max(0, Math.floor(P.count * 0.5));
+      shake(12, 0.4); ptcls(P.x, P.y, '#ef4444', 30);
+      playDmg(); vib('damage');
+      ftext(P.x, P.y-20, '-50%', '#f87171', 18);
       b.dead = true;
     }
   });
@@ -760,7 +692,7 @@ function update() {
       gameOverPending = true;
       shake(22, 1.2); ptcls(P.x, P.y, '#ef4444', 70);
       P.count = 0;
-      stopBGM(); vib([200,100,200,100,500]);
+      stopBGM(); vib('damage');
       setTimeout(()=>{ state=S.LOSE; }, 750);
       return;
     }
@@ -772,17 +704,12 @@ function update() {
     const clearBonus = 1000 + Math.ceil(P.count) * 50;
     addScore(clearBonus, GW/2, GH/2 - 60);
     ftext(GW/2, GH/2-30, '🏆 CLEAR!', '#fbbf24', 34);
-    stopBGM(); vib([100,50,100,50,300]);
+    stopBGM(); vib('boss');
     setTimeout(()=>{ state=S.WIN; }, 1400);
   }
 
   particles = particles.filter(p=>p.upd());
   ftexts    = ftexts.filter(t=>t.upd());
-  blastHoles = blastHoles.filter(h => {
-    h.life--;
-    return h.life > 0;
-  });
-  if (blastHoles.length > 12) blastHoles.splice(0, blastHoles.length - 12);
   if (shakeStr>0.1) shakeStr -= shakeDmpr;
 }
 
@@ -861,60 +788,31 @@ function drawSoldier(x, y, r) {
 // 【描画】プレイヤー集団
 // ============================================================
 function drawPlayer() {
-  const cnt = Math.max(0, Math.ceil(Math.min(P.count, 120)));
+  const cnt = Math.max(0, Math.ceil(P.count));
   if (!cnt) return;
-
   ctx.save();
-  ctx.translate(P.x,P.y);
-  ctx.scale(P.scale,P.scale);
-  ctx.translate(-P.x,-P.y);
-
-  const cols = Math.ceil(Math.sqrt(cnt*1.4));
-  const rows = Math.ceil(cnt/cols);
-
-  let sp;
-  if (cnt < 40) {
-    sp = 16;        // small squad → spread out
-  } else if (cnt < 120) {
-    sp = 14;        // medium group
-  } else if (cnt < 300) {
-    sp = 12;        // large platoon
-  } else if (cnt < 600) {
-    sp = 10;        // dense army
+  ctx.translate(P.x,P.y); ctx.scale(P.scale,P.scale); ctx.translate(-P.x,-P.y);
+  if (cnt > 50) {
+    const r = Math.min(20+cnt*.22, 50);
+    const g = ctx.createRadialGradient(P.x,P.y,0,P.x,P.y,r);
+    g.addColorStop(0,'#7dd3fc'); g.addColorStop(1,'#1d4ed8');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(P.x,P.y,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 15px Arial';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(cnt,P.x,P.y); ctx.textBaseline='alphabetic';
   } else {
-    sp = 8;         // very large army (tight formation)
-  }
-  let placed=0;
-
-  for (let r=0; r<rows && placed<cnt; r++) {
-    const inRow = Math.min(cols, cnt-placed);
-    const sx = P.x - (inRow-1)*sp/2;
-
-    for (let c=0; c<inRow; c++) {
-      const sxp = sx + c*sp;
-      const syp = P.y + r*sp;
-
-      let blocked = false;
-      if (blastHoles.length === 0) {
-        drawSoldier(sxp, syp, 5.5);
+    const cols = Math.ceil(Math.sqrt(cnt*1.4));
+    const rows = Math.ceil(cnt/cols);
+    const sp=15; let placed=0;
+    for (let r=0; r<rows && placed<cnt; r++) {
+      const inRow = Math.min(cols, cnt-placed);
+      const sx = P.x - (inRow-1)*sp/2;
+      for (let c=0; c<inRow; c++) {
+        drawSoldier(sx+c*sp, P.y+r*sp, 5.5);
         placed++;
-        continue;
       }
-      for (const h of blastHoles) {
-        const dx = sxp - h.x;
-        const dy = syp - h.y;
-        if (dx*dx + dy*dy < h.r*h.r) {
-          blocked = true;
-          break;
-        }
-      }
-
-      if (!blocked) drawSoldier(sxp, syp, 5.5);
-
-      placed++;
     }
   }
-
   ctx.restore();
 }
 
@@ -936,8 +834,8 @@ function drawBullets() {
 function drawEnemyBullets() {
   for (const b of enemyBullets) {
     ctx.fillStyle  = b.col || '#fb7185';
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
+    ctx.shadowColor= b.col || '#fb7185';
+    ctx.shadowBlur = 7;
     ctx.beginPath(); ctx.arc(b.x,b.y,4,0,Math.PI*2); ctx.fill();
   }
   ctx.shadowBlur=0;
@@ -1246,21 +1144,8 @@ function drawMenu() {
 // 入力
 // ============================================================
 function handleStart() {
-
-  const ac = getAC();
-  const mg = getMasterGain();
-
-  // iOS audio unlock
-  const o = ac.createOscillator();
-  const g = ac.createGain();
-
-  g.gain.value = 0.01;
-
-  o.connect(g);
-  g.connect(mg);
-
-  o.start();
-  o.stop(ac.currentTime + 0.01);
+  getAC(); // iOS AudioContext unlock（必ずユーザー操作内で）
+  getMasterGain();
   if (state===S.MENU)  startLevel(level);
   else if (state===S.WIN)  { level=Math.min(level+1,MAX_LEVEL); startLevel(level); }
   else if (state===S.LOSE) startLevel(level);
@@ -1282,18 +1167,6 @@ canvas.addEventListener('touchstart', e => {
   handleStart();
 }, {passive:false});
 canvas.addEventListener('click', handleStart);
-const pauseBtn = document.getElementById('pauseBtn');
-
-pauseBtn.addEventListener('click', () => {
-  if (state !== S.PLAY) return;
-
-  paused = !paused;
-
-  if (paused) stopBGM();
-  else startBGM('normal');
-
-  pauseBtn.textContent = paused ? '▶' : '⏸';
-});
 document.addEventListener('keydown', e => {
   if (e.key==='ArrowLeft')  inputX=Math.max(55,inputX-28);
   if (e.key==='ArrowRight') inputX=Math.min(GW-55,inputX+28);
@@ -1324,15 +1197,6 @@ function loop(ts) {
     for (const t of ftexts)   t.draw();
     drawHUD();
     if (state===S.WIN||state===S.LOSE) drawOverlay(state===S.WIN);
-    if (paused && state === S.PLAY) {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0,0,GW,GH);
-
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 36px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('⏸ PAUSED', GW/2, GH/2);
-    }
   }
   ctx.restore();
   requestAnimationFrame(loop);
