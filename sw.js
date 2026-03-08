@@ -1,5 +1,5 @@
 // Service Worker for クラウドランナー PWA
-const CACHE_NAME = 'cloudrunner-v1';
+const CACHE_NAME = 'cloudrunner-v2';
 const ASSETS = [
   './',
   './index.html',
