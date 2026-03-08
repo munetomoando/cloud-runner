@@ -13,11 +13,23 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #0a0a14; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-    canvas { display: block; touch-action: none; }
+    #pauseBtn {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 10;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 18px;
+    }canvas { display: block; touch-action: none; }
   </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<button id="pauseBtn">⏸</button>
 <script>
 // ============================================================
 // Canvas セットアップ
@@ -47,7 +59,8 @@ function playSound(freq, type, vol, dur, freq2) {
     if (freq2) o.frequency.exponentialRampToValueAtTime(freq2, ac.currentTime + dur * 0.8);
     g.gain.setValueAtTime(vol || 0.08, ac.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
-    o.connect(g); g.connect(masterGain || ac.destination);
+    o.connect(g); 
+    g.connect(getMasterGain());
     o.start(); o.stop(ac.currentTime + dur + 0.01);
   } catch(e) {}
 }
@@ -228,7 +241,7 @@ function addBullet(b) {
 let shakeStr = 0, shakeDmpr = 0, bgOff = 0, bgOff2 = 0;
 let bTimer = 0;
 let gameOverPending = false, winPending = false;
-
+let paused = false;
 // ============================================================
 // レベルタイムライン
 // ============================================================
@@ -525,7 +538,7 @@ function applyGate(g) {
 // 更新ループ
 // ============================================================
 function update() {
-  if (state!==S.PLAY || gameOverPending || winPending) return;
+  if (state!==S.PLAY || gameOverPending || winPending || paused) return;
   timer++;
   bgOff  = (bgOff  + 2.5) % 56;
   bgOff2 = (bgOff2 + 1.2) % 120;
@@ -1116,8 +1129,21 @@ function drawMenu() {
 // 入力
 // ============================================================
 function handleStart() {
-  getAC(); // iOS AudioContext unlock（必ずユーザー操作内で）
-  getMasterGain();
+
+  const ac = getAC();
+  const mg = getMasterGain();
+
+  // iOS audio unlock
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+
+  g.gain.value = 0.01;
+
+  o.connect(g);
+  g.connect(mg);
+
+  o.start();
+  o.stop(ac.currentTime + 0.01);
   if (state===S.MENU)  startLevel(level);
   else if (state===S.WIN)  { level=Math.min(level+1,MAX_LEVEL); startLevel(level); }
   else if (state===S.LOSE) startLevel(level);
@@ -1139,6 +1165,18 @@ canvas.addEventListener('touchstart', e => {
   handleStart();
 }, {passive:false});
 canvas.addEventListener('click', handleStart);
+const pauseBtn = document.getElementById('pauseBtn');
+
+pauseBtn.addEventListener('click', () => {
+  if (state !== S.PLAY) return;
+
+  paused = !paused;
+
+  if (paused) stopBGM();
+  else startBGM('normal');
+
+  pauseBtn.textContent = paused ? '▶' : '⏸';
+});
 document.addEventListener('keydown', e => {
   if (e.key==='ArrowLeft')  inputX=Math.max(55,inputX-28);
   if (e.key==='ArrowRight') inputX=Math.min(GW-55,inputX+28);
@@ -1169,6 +1207,15 @@ function loop(ts) {
     for (const t of ftexts)   t.draw();
     drawHUD();
     if (state===S.WIN||state===S.LOSE) drawOverlay(state===S.WIN);
+    if (paused && state === S.PLAY) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0,0,GW,GH);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 36px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('⏸ PAUSED', GW/2, GH/2);
+    }
   }
   ctx.restore();
   requestAnimationFrame(loop);
