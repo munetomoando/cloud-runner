@@ -336,15 +336,15 @@ function spawnEnemy(x, hp) {
   const r = Math.min(16 + hp * 0.65, 32);
   enemies.push({
     x, y: -r-10, hp, maxHp:hp, type:'normal', radius:r,
-    vy: 1.1 + Math.random()*0.2,
-    vx: (Math.random()-0.5) * 1.0,   // AI横移動初速
+    vy: 1.1 + (level * 0.25) + Math.random()*0.2,
+    vx: (Math.random()-0.5) * (1.0 + level*0.15),   // AI横移動初速
     vxTimer: Math.floor(Math.random()*60),
     hitFlash: 0
   });
 }
 function spawnMidBoss(x, hp) {
   enemies.push({
-    x, y:-65, hp, maxHp:hp, type:'mid', radius:46, vy:0.55,
+    x, y:-65, hp, maxHp:hp, type:'mid', radius:46, vy:0.55 + level*0.12,
     hitFlash:0, wobble:0, phase:1, armAngle:0,
     shotTimer:0, patternIdx:0,
     strafeDir:1, strafeTimer:0
@@ -355,7 +355,7 @@ function spawnBoss(x, hp) {
   shake(18, 1);
   vib([200,100,200,100,400]);
   enemies.push({
-    x, y:-85, hp, maxHp:hp, type:'boss', radius:66, vy:0.28,
+    x, y:-85, hp, maxHp:hp, type:'boss', radius:66, vy:0.28 + level*0.08,
     hitFlash:0, wobble:0, phase:1, spinAngle:0,
     shotTimer:0, patternIdx:0, spiralAngle:0,
     strafeDir:1, strafeTimer:0
@@ -398,7 +398,7 @@ function bossShoot(e) {
   const pat = patterns[e.patternIdx % patterns.length];
   e.patternIdx++;
 
-  const sp = isBoss ? (p2 ? 3.8 : 2.9) : (p2 ? 2.6 : 2.1);
+  const sp = (isBoss ? (p2 ? 3.8 : 2.9) : (p2 ? 2.6 : 2.1)) + level * 0.35;
   const dx = P.x - e.x, dy = P.y - e.y;
   const d  = Math.sqrt(dx*dx + dy*dy) || 1;
   const ax = dx/d, ay = dy/d;
